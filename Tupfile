@@ -3,3 +3,4 @@ CFLAGS += -Wall -Werror
 
 .gitignore
 : foreach *.c |> cc -c %f $(CFLAGS) -o %o |> %B.o
+: *.o |> cc %f -lm -o %o |> nvme-memload
