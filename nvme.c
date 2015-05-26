@@ -77,7 +77,14 @@ static const char *nvme_status_to_string(__u32 status)
 	}
 }
 
-void open_dev(const char *dev) {
+static void handle_nvme_error(const char *cmd, int err) {
+	if (err < 0)
+		perror("ioctl");
+	else if (err)
+		fprintf(stderr, "%s:%s(%04x)\n", cmd, nvme_status_to_string(err), err);
+}
+
+void open_nvme(const char *dev) {
 	int err;
 	fd = open(dev, O_RDONLY);
 	if (fd < 0)
@@ -98,19 +105,22 @@ perror:
 }
 
 
-int identify(int namespace, void *ptr, int cns) {
+int identify(void *ptr, int cns) {
 	struct nvme_admin_cmd cmd;
+	int err;
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = nvme_admin_identify;
-	cmd.nsid = namespace;
+	cmd.nsid = ioctl(fd, NVME_IOCTL_ID);
 	cmd.addr = (unsigned long)ptr;
 	cmd.data_len = 4096;
 	cmd.cdw10 = cns;
-	return ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+	err = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+	handle_nvme_error("identify", err);
+	return err;
 }
 
-int read(void *buffer, __u64 start_block, __u16 block_count) {
+int read_nvme(void *buffer, __u64 start_block, __u16 block_count) {
 	struct nvme_user_io io;
 	int err;
 
@@ -122,9 +132,6 @@ int read(void *buffer, __u64 start_block, __u16 block_count) {
 	io.addr   = (__u64)buffer;
 
 	err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
-	if (err < 0)
-		perror("ioctl");
-	else if (err)
-		printf("%s:%s(%04x)\n", "read", nvme_status_to_string(err), err);
+	handle_nvme_error("read", err);
 	return err;
 }
