@@ -1,0 +1,130 @@
+// Adapted from nvme-cli: https://github.com/linux-nvme/nvme-cli
+// Original license:
+/*
+ * nvme.c -- NVM-Express command line utility.
+ *
+ * Copyright (c) 2014-2015, Intel Corporation.
+ *
+ * Written by Keith Busch <keith.busch@intel.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "nvme.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <linux/nvme.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+static int fd;
+
+static const char *nvme_status_to_string(__u32 status)
+{
+	switch (status & 0x3ff) {
+	case NVME_SC_SUCCESS:		return "SUCCESS";
+	case NVME_SC_INVALID_OPCODE:	return "INVALID_OPCODE";
+	case NVME_SC_INVALID_FIELD:	return "INVALID_FIELD";
+	case NVME_SC_CMDID_CONFLICT:	return "CMDID_CONFLICT";
+	case NVME_SC_DATA_XFER_ERROR:	return "DATA_XFER_ERROR";
+	case NVME_SC_POWER_LOSS:	return "POWER_LOSS";
+	case NVME_SC_INTERNAL:		return "INTERNAL";
+	case NVME_SC_ABORT_REQ:		return "ABORT_REQ";
+	case NVME_SC_ABORT_QUEUE:	return "ABORT_QUEUE";
+	case NVME_SC_FUSED_FAIL:	return "FUSED_FAIL";
+	case NVME_SC_FUSED_MISSING:	return "FUSED_MISSING";
+	case NVME_SC_INVALID_NS:	return "INVALID_NS";
+	case NVME_SC_CMD_SEQ_ERROR:	return "CMD_SEQ_ERROR";
+	case NVME_SC_LBA_RANGE:		return "LBA_RANGE";
+	case NVME_SC_CAP_EXCEEDED:	return "CAP_EXCEEDED";
+	case NVME_SC_NS_NOT_READY:	return "NS_NOT_READY";
+	case NVME_SC_CQ_INVALID:	return "CQ_INVALID";
+	case NVME_SC_QID_INVALID:	return "QID_INVALID";
+	case NVME_SC_QUEUE_SIZE:	return "QUEUE_SIZE";
+	case NVME_SC_ABORT_LIMIT:	return "ABORT_LIMIT";
+	case NVME_SC_ABORT_MISSING:	return "ABORT_MISSING";
+	case NVME_SC_ASYNC_LIMIT:	return "ASYNC_LIMIT";
+	case NVME_SC_FIRMWARE_SLOT:	return "FIRMWARE_SLOT";
+	case NVME_SC_FIRMWARE_IMAGE:	return "FIRMWARE_IMAGE";
+	case NVME_SC_INVALID_VECTOR:	return "INVALID_VECTOR";
+	case NVME_SC_INVALID_LOG_PAGE:	return "INVALID_LOG_PAGE";
+	case NVME_SC_INVALID_FORMAT:	return "INVALID_FORMAT";
+	case NVME_SC_BAD_ATTRIBUTES:	return "BAD_ATTRIBUTES";
+	case NVME_SC_WRITE_FAULT:	return "WRITE_FAULT";
+	case NVME_SC_READ_ERROR:	return "READ_ERROR";
+	case NVME_SC_GUARD_CHECK:	return "GUARD_CHECK";
+	case NVME_SC_APPTAG_CHECK:	return "APPTAG_CHECK";
+	case NVME_SC_REFTAG_CHECK:	return "REFTAG_CHECK";
+	case NVME_SC_COMPARE_FAILED:	return "COMPARE_FAILED";
+	case NVME_SC_ACCESS_DENIED:	return "ACCESS_DENIED";
+	default:			return "Unknown";
+	}
+}
+
+void open_dev(const char *dev) {
+	int err;
+	fd = open(dev, O_RDONLY);
+	if (fd < 0)
+		goto perror;
+
+	struct stat nvme_stat;
+	err = fstat(fd, &nvme_stat);
+	if (err < 0)
+		goto perror;
+	if (!S_ISCHR(nvme_stat.st_mode) && !S_ISBLK(nvme_stat.st_mode)) {
+		fprintf(stderr, "%s is not a block or character device\n", dev);
+		exit(ENODEV);
+	}
+	return;
+perror:
+	perror(dev);
+	exit(errno);
+}
+
+
+int identify(int namespace, void *ptr, int cns) {
+	struct nvme_admin_cmd cmd;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = nvme_admin_identify;
+	cmd.nsid = namespace;
+	cmd.addr = (unsigned long)ptr;
+	cmd.data_len = 4096;
+	cmd.cdw10 = cns;
+	return ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+}
+
+int read(void *buffer, __u64 start_block, __u16 block_count) {
+	struct nvme_user_io io;
+	int err;
+
+	memset(&io, 0, sizeof(io));
+
+	io.opcode = nvme_cmd_read;
+	io.slba    = start_block;
+	io.nblocks = block_count;
+	io.addr   = (__u64)buffer;
+
+	err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
+	if (err < 0)
+		perror("ioctl");
+	else if (err)
+		printf("%s:%s(%04x)\n", "read", nvme_status_to_string(err), err);
+	return err;
+}

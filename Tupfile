@@ -1,0 +1,5 @@
+CFLAGS += -std=c11
+CFLAGS += -Wall -Werror
+
+.gitignore
+: foreach *.c |> cc -c %f $(CFLAGS) -o %o |> %B.o
