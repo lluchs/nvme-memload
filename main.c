@@ -24,6 +24,8 @@
 #include "control.h"
 
 #define DEVICE "/dev/nvme0n1"
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static uint8_t *buffer;
 
@@ -63,14 +65,20 @@ int main(int argc, char **argv) {
 		cmd = next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
-			err = read_nvme(buffer + (cmd.target_block << ssd_features.lba_shift), 0, cmd.block_count);
+			for (int todo = cmd.block_count; todo > 0; todo -= ssd_features.max_block_count) {
+				err = read_nvme(
+						buffer + ((cmd.target_block + cmd.block_count - todo) << ssd_features.lba_shift),
+						0,
+						// XXX: Why is -1 necessary here?
+						MIN(todo, ssd_features.max_block_count - 1));
+				if (err != 0) exit(1);
+			}
 			block_count += cmd.block_count;
 			break;
 		default:
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
 			exit(1);
 		}
-		if (err != 0) exit(1);
 		gettimeofday(&t, NULL);
 		if (sec != t.tv_sec) {
 			printf("%ld blocks/s (%ld MiB/s)\n", block_count, (block_count << ssd_features.lba_shift) >> 20);

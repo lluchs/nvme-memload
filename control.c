@@ -20,13 +20,24 @@ int block_count() {
 	return 100;
 }
 
+/* Always write to the full buffer. */
+struct cmd next_cmd() {
+	return (struct cmd) {
+		.op = OP_WRITE,
+		.block_count = block_count(),
+		.target_block = 0
+	};
+}
+// */
+
+/* Sequentially write a single block to memory. * /
 struct cmd next_cmd() {
 	static int current = 0;
 	current %= block_count();
-	// Sequentially write a single block to memory.
 	return (struct cmd) {
 		.op = OP_WRITE,
 		.block_count = 1,
 		.target_block = current++
 	};
 }
+// */
