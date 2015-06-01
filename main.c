@@ -19,12 +19,13 @@
 #include <stdlib.h>
 #include <math.h>
 #include <sys/time.h>
+#include <inttypes.h>
 #include "nvme.h"
 #include "control.h"
 
 #define DEVICE "/dev/nvme0n1"
 
-static void *buffer;
+static uint8_t *buffer;
 
 static struct {
 	int lba_shift;
@@ -44,14 +45,14 @@ static void get_ssd_features() {
 }
 
 int main(int argc, char **argv) {
-	/* int err = 0; */
+	int err = 0;
 	open_nvme(DEVICE);
 	get_ssd_features();
 
 	fprintf(stderr, "Block size: %i\n", 1 << ssd_features.lba_shift);
 	fprintf(stderr, "Max block count: %i\n", ssd_features.max_block_count);
 
-	buffer = malloc(block_count());
+	buffer = malloc(block_count() << ssd_features.lba_shift);
 
 	struct timeval t;
 	gettimeofday(&t, NULL);
@@ -62,13 +63,14 @@ int main(int argc, char **argv) {
 		cmd = next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
-			read_nvme(buffer + (cmd.target_block << ssd_features.lba_shift), 0, cmd.block_count);
+			err = read_nvme(buffer + (cmd.target_block << ssd_features.lba_shift), 0, cmd.block_count);
 			block_count += cmd.block_count;
 			break;
 		default:
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
 			exit(1);
 		}
+		if (err != 0) exit(1);
 		gettimeofday(&t, NULL);
 		if (sec != t.tv_sec) {
 			printf("%ld blocks/s (%ld MiB/s)\n", block_count, (block_count << ssd_features.lba_shift) >> 20);
