@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/time.h>
 #include "nvme.h"
 #include "control.h"
 
@@ -52,16 +53,27 @@ int main(int argc, char **argv) {
 
 	buffer = malloc(block_count());
 
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	time_t sec = t.tv_sec;
+	long block_count = 0;
 	struct cmd cmd;
 	for (;;) {
 		cmd = next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
 			read_nvme(buffer + (cmd.target_block << ssd_features.lba_shift), 0, cmd.block_count);
+			block_count += cmd.block_count;
 			break;
 		default:
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
 			exit(1);
+		}
+		gettimeofday(&t, NULL);
+		if (sec != t.tv_sec) {
+			printf("%ld blocks/s (%ld MiB/s)\n", block_count, (block_count << ssd_features.lba_shift) >> 20);
+			block_count = 0;
+			sec = t.tv_sec;
 		}
 	}
 
