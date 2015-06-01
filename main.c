@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#include "nvme.h"
 #include <linux/nvme.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include "nvme.h"
+#include "control.h"
 
 #define DEVICE "/dev/nvme0n1"
-#define BLOCK_COUNT 50
 
-/* static void *buffer; */
+static void *buffer;
 
 static struct {
 	int lba_shift;
@@ -47,10 +47,23 @@ int main(int argc, char **argv) {
 	open_nvme(DEVICE);
 	get_ssd_features();
 
-	printf("Block size: %i\n", 1 << ssd_features.lba_shift);
-	printf("Max block count: %i\n", ssd_features.max_block_count);
+	fprintf(stderr, "Block size: %i\n", 1 << ssd_features.lba_shift);
+	fprintf(stderr, "Max block count: %i\n", ssd_features.max_block_count);
 
-	/* buffer = malloc(BLOCK_COUNT); */
+	buffer = malloc(block_count());
+
+	struct cmd cmd;
+	for (;;) {
+		cmd = next_cmd();
+		switch (cmd.op) {
+		case OP_WRITE:
+			read_nvme(buffer + (cmd.target_block << ssd_features.lba_shift), 0, cmd.block_count);
+			break;
+		default:
+			fprintf(stderr, "Invalid command %d\n", cmd.op);
+			exit(1);
+		}
+	}
 
 	return 0;
 }
