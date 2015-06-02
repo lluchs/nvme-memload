@@ -108,6 +108,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "%s\n", error);
 		exit(1);
 	}
+	printf("Memory buffer size: %"PRIu64" blocks (%"PRIu64" MiB)\n", pattern->block_count(), (pattern->block_count() << ssd_features.lba_shift) >> 20);
 	printf("Pattern loaded: %s\n%s\n\n", argv[2], pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
