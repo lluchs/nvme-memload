@@ -28,6 +28,8 @@ enum {
 };
 
 struct ssd_features {
+	char sn[21];
+	char mn[41];
 	uint64_t size;
 	int lba_shift;
 	int max_block_count;

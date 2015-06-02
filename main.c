@@ -21,12 +21,11 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include "nvme.h"
 #include "pattern.h"
-
-#define DEVICE "/dev/nvme0n1"
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
@@ -39,6 +38,10 @@ static void get_ssd_features() {
 	if (err < 0) return;
 	err = nvme_identify(&ctrl, 1);
 
+	memcpy(ssd_features.sn, ctrl.sn, 20);
+	ssd_features.sn[20] = 0;
+	memcpy(ssd_features.mn, ctrl.mn, 40);
+	ssd_features.mn[40] = 0;
 	ssd_features.size = ns.nsze;
 	ssd_features.lba_shift = ns.lbaf[ns.flbas].ds;
 	ssd_features.max_block_count = pow(2, ctrl.mdts + 12 - ssd_features.lba_shift);
@@ -83,28 +86,29 @@ static void perform_io(struct cmd *cmd) {
 }
 
 int main(int argc, char **argv) {
+	if (argc != 3) {
+		fprintf(stderr, "Usage: %s /dev/nvme0n1 pattern.so\n", argv[0]);
+		exit(1);
+	}
+
 	init_random();
-	nvme_open(DEVICE);
+	nvme_open(argv[1]);
 	get_ssd_features();
 
+	printf("SSD: %s (%s)\n", ssd_features.mn, ssd_features.sn);
 	printf("SSD size: %"PRIu64" blocks (%"PRIu64" GiB)\n", ssd_features.size, (ssd_features.size << ssd_features.lba_shift) >> 30);
 	printf("Block size: %i B\n", 1 << ssd_features.lba_shift);
 	printf("Max block count: %i blocks per command\n", ssd_features.max_block_count);
 
-	if (argc != 2) {
-		fprintf(stderr, "Usage: %s pattern.so\n", argv[0]);
-		exit(1);
-	}
-
 	// Get pattern to execute from the dynamic linker.
-	void *handle = dlopen(argv[1], RTLD_LAZY);
+	void *handle = dlopen(argv[2], RTLD_LAZY);
 	struct pattern *pattern = dlsym(handle, "pattern");
 	char *error = dlerror();
 	if (error != NULL) {
 		fprintf(stderr, "%s\n", error);
 		exit(1);
 	}
-	printf("Pattern loaded: %s\n%s\n\n", argv[1], pattern->desc);
+	printf("Pattern loaded: %s\n%s\n\n", argv[2], pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
 	if (buffer == NULL) {
