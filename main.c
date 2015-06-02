@@ -27,16 +27,9 @@
 #include "pattern.h"
 
 #define DEVICE "/dev/nvme0n1"
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static uint8_t *buffer;
-
-static struct {
-	uint64_t size;
-	int lba_shift;
-	int max_block_count;
-} ssd_features;
+static struct ssd_features ssd_features;
 
 static void get_ssd_features() {
 	int err;
@@ -79,19 +72,14 @@ static uint64_t get_random_block(uint16_t size) {
 static void perform_io(struct cmd *cmd) {
 	int err;
 	uint64_t ssd_block = 0;
-	uint16_t count;
-	for (int todo = cmd->block_count; todo > 0; todo -= ssd_features.max_block_count) {
-		// XXX: Why is -1 necessary here?
-		count = MIN(todo, ssd_features.max_block_count - 1);
-		// Randomize SSD write target for optimal performance.
-		if (cmd->op == OP_READ) ssd_block = get_random_block(count);
-		err = nvme_io(
-				cmd->op,
-				buffer + ((cmd->target_block + cmd->block_count - todo) << ssd_features.lba_shift),
-				ssd_block,
-				count);
-		if (err != 0) exit(1);
-	}
+	// Randomize SSD write target for optimal performance.
+	if (cmd->op == OP_READ) ssd_block = get_random_block(cmd->block_count);
+	err = nvme_io(
+			cmd->op,
+			buffer + (cmd->target_block << ssd_features.lba_shift),
+			ssd_block,
+			cmd->block_count);
+	if (err != 0) exit(1);
 }
 
 int main(int argc, char **argv) {
@@ -130,7 +118,7 @@ int main(int argc, char **argv) {
 	uint64_t block_count = 0;
 	struct cmd cmd;
 	for (;;) {
-		cmd = pattern->next_cmd();
+		cmd = pattern->next_cmd(&ssd_features);
 		switch (cmd.op) {
 		case OP_WRITE:
 		case OP_READ:

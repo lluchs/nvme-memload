@@ -15,6 +15,10 @@
  */
 
 #include <inttypes.h>
+#include <stdlib.h>
+
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 enum {
 	// These correspond to the NVMe opcodes. Note that NVMe commands are from
@@ -23,13 +27,19 @@ enum {
 	OP_WRITE = 2, // write to memory
 };
 
+struct ssd_features {
+	uint64_t size;
+	int lba_shift;
+	int max_block_count;
+};
+
 struct cmd {
 	// Operation
 	int op;
 	// How many blocks to read.
 	uint16_t block_count;
 	// The target position in memory.
-	int target_block;
+	size_t target_block;
 };
 
 struct pattern {
@@ -39,5 +49,5 @@ struct pattern {
 	uint64_t (*block_count)();
 
 	// Returns the next thing to do.
-	struct cmd (*next_cmd)();
+	struct cmd (*next_cmd)(struct ssd_features*);
 };

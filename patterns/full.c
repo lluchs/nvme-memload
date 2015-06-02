@@ -21,11 +21,22 @@ static uint64_t block_count() {
 }
 
 /* Always write to the full buffer. */
-static struct cmd next_cmd() {
+static struct cmd next_cmd(struct ssd_features *ssd_features) {
+	static uint64_t todo = 0;
+	uint64_t count = block_count();
+	if (todo == 0) todo = count;
+
+	size_t target_block = count - todo;
+	if (todo > ssd_features->max_block_count)
+		todo -= ssd_features->max_block_count;
+	else
+		todo = 0;
+
 	return (struct cmd) {
 		.op = OP_WRITE,
-		.block_count = block_count(),
-		.target_block = 0
+		// XXX: Why is -1 necessary here?
+		.block_count = MIN(todo, ssd_features->max_block_count - 1),
+		.target_block = target_block
 	};
 }
 
