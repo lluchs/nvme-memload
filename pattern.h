@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <inttypes.h>
+
 enum {
 	// These correspond to the NVMe opcodes. Note that NVMe commands are from
 	// SSD perspective.
@@ -25,7 +27,7 @@ struct cmd {
 	// Operation
 	int op;
 	// How many blocks to read.
-	int block_count;
+	uint16_t block_count;
 	// The target position in memory.
 	int target_block;
 };

@@ -15,12 +15,14 @@
  */
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <linux/nvme.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include "nvme.h"
 #include "pattern.h"
 
@@ -31,6 +33,7 @@
 static uint8_t *buffer;
 
 static struct {
+	uint64_t size;
 	int lba_shift;
 	int max_block_count;
 } ssd_features;
@@ -43,17 +46,62 @@ static void get_ssd_features() {
 	if (err < 0) return;
 	err = nvme_identify(&ctrl, 1);
 
+	ssd_features.size = ns.nsze;
 	ssd_features.lba_shift = ns.lbaf[ns.flbas].ds;
 	ssd_features.max_block_count = pow(2, ctrl.mdts + 12 - ssd_features.lba_shift);
 }
 
+// Initializes the random number generator.
+static void init_random() {
+	// Get a truly random seed so that even two instances started at the same
+	// time will not use the same sequence.
+	int fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0) goto perror;
+	unsigned int seed;
+	if (read(fd, &seed, sizeof(seed)) != sizeof(seed)) goto perror;
+	srand(seed);
+	close(fd);
+	return;
+perror:
+	perror("init_random");
+	exit(1);
+}
+
+// Returns a random block number which allows accessing `size` blocks.
+static uint64_t get_random_block(uint16_t size) {
+	uint64_t max = ssd_features.size;
+	// This isn't uniform, but hopefully random enough. It also won't use all
+	// of very large SSDs.
+	return rand() % (max - size);
+}
+
+// Performs an IO (i.e. read/write to SSD) command.
+static void perform_io(struct cmd *cmd) {
+	int err;
+	uint64_t ssd_block = 0;
+	uint16_t count;
+	for (int todo = cmd->block_count; todo > 0; todo -= ssd_features.max_block_count) {
+		// XXX: Why is -1 necessary here?
+		count = MIN(todo, ssd_features.max_block_count - 1);
+		// Randomize SSD write target for optimal performance.
+		if (cmd->op == OP_READ) ssd_block = get_random_block(count);
+		err = nvme_io(
+				cmd->op,
+				buffer + ((cmd->target_block + cmd->block_count - todo) << ssd_features.lba_shift),
+				ssd_block,
+				count);
+		if (err != 0) exit(1);
+	}
+}
+
 int main(int argc, char **argv) {
-	int err = 0;
+	init_random();
 	nvme_open(DEVICE);
 	get_ssd_features();
 
-	printf("Block size: %i\n", 1 << ssd_features.lba_shift);
-	printf("Max block count: %i\n", ssd_features.max_block_count);
+	printf("SSD size: %"PRIu64" blocks (%"PRIu64" GiB)\n", ssd_features.size, (ssd_features.size << ssd_features.lba_shift) >> 30);
+	printf("Block size: %i B\n", 1 << ssd_features.lba_shift);
+	printf("Max block count: %i blocks per command\n", ssd_features.max_block_count);
 
 	if (argc != 2) {
 		fprintf(stderr, "Usage: %s pattern.so\n", argv[0]);
@@ -75,22 +123,14 @@ int main(int argc, char **argv) {
 	struct timeval t;
 	gettimeofday(&t, NULL);
 	time_t sec = t.tv_sec;
-	long block_count = 0;
+	uint64_t block_count = 0;
 	struct cmd cmd;
 	for (;;) {
 		cmd = pattern->next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
 		case OP_READ:
-			for (int todo = cmd.block_count; todo > 0; todo -= ssd_features.max_block_count) {
-				err = nvme_io(
-						cmd.op,
-						buffer + ((cmd.target_block + cmd.block_count - todo) << ssd_features.lba_shift),
-						0,
-						// XXX: Why is -1 necessary here?
-						MIN(todo, ssd_features.max_block_count - 1));
-				if (err != 0) exit(1);
-			}
+			perform_io(&cmd);
 			block_count += cmd.block_count;
 			break;
 		default:
