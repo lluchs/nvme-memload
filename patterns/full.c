@@ -16,8 +16,8 @@
 
 #include "pattern.h"
 
-static int block_count() {
-	return 31;
+static uint64_t block_count() {
+	return 1000000;
 }
 
 /* Always write to the full buffer. */

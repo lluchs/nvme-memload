@@ -16,7 +16,7 @@
 
 #include "pattern.h"
 
-static int block_count() {
+static uint64_t block_count() {
 	return 31;
 }
 
