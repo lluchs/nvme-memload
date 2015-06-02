@@ -119,6 +119,10 @@ int main(int argc, char **argv) {
 	printf("Pattern loaded: %s\n%s\n\n", argv[1], pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
+	if (buffer == NULL) {
+		perror("malloc");
+		exit(1);
+	}
 
 	struct timeval t;
 	gettimeofday(&t, NULL);
