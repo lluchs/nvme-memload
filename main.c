@@ -39,9 +39,9 @@ static void get_ssd_features() {
 	int err;
 	struct nvme_id_ns ns;
 	struct nvme_id_ctrl ctrl;
-	err = identify(&ns, 0);
+	err = nvme_identify(&ns, 0);
 	if (err < 0) return;
-	err = identify(&ctrl, 1);
+	err = nvme_identify(&ctrl, 1);
 
 	ssd_features.lba_shift = ns.lbaf[ns.flbas].ds;
 	ssd_features.max_block_count = pow(2, ctrl.mdts + 12 - ssd_features.lba_shift);
@@ -49,7 +49,7 @@ static void get_ssd_features() {
 
 int main(int argc, char **argv) {
 	int err = 0;
-	open_nvme(DEVICE);
+	nvme_open(DEVICE);
 	get_ssd_features();
 
 	printf("Block size: %i\n", 1 << ssd_features.lba_shift);
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
 		switch (cmd.op) {
 		case OP_WRITE:
 			for (int todo = cmd.block_count; todo > 0; todo -= ssd_features.max_block_count) {
-				err = read_nvme(
+				err = nvme_read(
 						buffer + ((cmd.target_block + cmd.block_count - todo) << ssd_features.lba_shift),
 						0,
 						// XXX: Why is -1 necessary here?

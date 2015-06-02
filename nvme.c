@@ -84,7 +84,7 @@ static void handle_nvme_error(const char *cmd, int err) {
 		fprintf(stderr, "%s:%s(%04x)\n", cmd, nvme_status_to_string(err), err);
 }
 
-void open_nvme(const char *dev) {
+void nvme_open(const char *dev) {
 	int err;
 	fd = open(dev, O_RDONLY);
 	if (fd < 0)
@@ -105,7 +105,7 @@ perror:
 }
 
 
-int identify(void *ptr, int cns) {
+int nvme_identify(void *ptr, int cns) {
 	struct nvme_admin_cmd cmd;
 	int err;
 
@@ -120,7 +120,7 @@ int identify(void *ptr, int cns) {
 	return err;
 }
 
-int read_nvme(void *buffer, __u64 start_block, __u16 block_count) {
+int nvme_read(void *buffer, __u64 start_block, __u16 block_count) {
 	struct nvme_user_io io;
 	int err;
 
