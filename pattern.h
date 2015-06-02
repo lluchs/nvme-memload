@@ -15,7 +15,10 @@
  */
 
 enum {
-	OP_WRITE, // write to memory
+	// These correspond to the NVMe opcodes. Note that NVMe commands are from
+	// SSD perspective.
+	OP_READ  = 1, // read from memory
+	OP_WRITE = 2, // write to memory
 };
 
 struct cmd {

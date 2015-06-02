@@ -120,16 +120,16 @@ int nvme_identify(void *ptr, int cns) {
 	return err;
 }
 
-int nvme_read(void *buffer, __u64 start_block, __u16 block_count) {
+int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
 	struct nvme_user_io io;
 	int err;
 
 	memset(&io, 0, sizeof(io));
 
-	io.opcode = nvme_cmd_read;
+	io.opcode  = op;
 	io.slba    = start_block;
 	io.nblocks = block_count;
-	io.addr   = (__u64)buffer;
+	io.addr    = (__u64)buffer;
 
 	err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
 	handle_nvme_error("read", err);

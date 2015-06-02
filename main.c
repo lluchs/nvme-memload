@@ -81,8 +81,10 @@ int main(int argc, char **argv) {
 		cmd = pattern->next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
+		case OP_READ:
 			for (int todo = cmd.block_count; todo > 0; todo -= ssd_features.max_block_count) {
-				err = nvme_read(
+				err = nvme_io(
+						cmd.op,
 						buffer + ((cmd.target_block + cmd.block_count - todo) << ssd_features.lba_shift),
 						0,
 						// XXX: Why is -1 necessary here?
