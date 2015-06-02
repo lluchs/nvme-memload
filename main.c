@@ -15,7 +15,6 @@
  */
 
 #include <dlfcn.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <linux/nvme.h>
 #include <math.h>
@@ -23,9 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
-#include <unistd.h>
 #include "nvme.h"
 #include "pattern.h"
+#include "random.h"
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
@@ -47,36 +46,12 @@ static void get_ssd_features() {
 	ssd_features.max_block_count = pow(2, ctrl.mdts + 12 - ssd_features.lba_shift);
 }
 
-// Initializes the random number generator.
-static void init_random() {
-	// Get a truly random seed so that even two instances started at the same
-	// time will not use the same sequence.
-	int fd = open("/dev/urandom", O_RDONLY);
-	if (fd < 0) goto perror;
-	unsigned int seed;
-	if (read(fd, &seed, sizeof(seed)) != sizeof(seed)) goto perror;
-	srand(seed);
-	close(fd);
-	return;
-perror:
-	perror("init_random");
-	exit(1);
-}
-
-// Returns a random block number which allows accessing `size` blocks.
-static uint64_t get_random_block(uint16_t size) {
-	uint64_t max = ssd_features.size;
-	// This isn't uniform, but hopefully random enough. It also won't use all
-	// of very large SSDs.
-	return rand() % (max - size);
-}
-
 // Performs an IO (i.e. read/write to SSD) command.
 static void perform_io(struct cmd *cmd) {
 	int err;
 	uint64_t ssd_block = 0;
 	// Randomize SSD write target for optimal performance.
-	if (cmd->op == OP_READ) ssd_block = get_random_block(cmd->block_count);
+	if (cmd->op == OP_READ) ssd_block = get_random_block(ssd_features.size, cmd->block_count);
 	err = nvme_io(
 			cmd->op,
 			buffer + (cmd->target_block << ssd_features.lba_shift),
