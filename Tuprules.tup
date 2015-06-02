@@ -1,0 +1,7 @@
+CFLAGS += -std=c11
+CFLAGS += -Wall -Werror
+
+LDFLAGS += -lm
+
+!cc = |> cc -c %f $(CFLAGS) -o %o |> %B.o
+!ld = |> cc %f $(CFLAGS) $(LDFLAGS) -o %o |>

@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
+#include <dlfcn.h>
+#include <inttypes.h>
 #include <linux/nvme.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <sys/time.h>
-#include <inttypes.h>
 #include "nvme.h"
-#include "control.h"
+#include "pattern.h"
 
 #define DEVICE "/dev/nvme0n1"
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -54,7 +55,21 @@ int main(int argc, char **argv) {
 	fprintf(stderr, "Block size: %i\n", 1 << ssd_features.lba_shift);
 	fprintf(stderr, "Max block count: %i\n", ssd_features.max_block_count);
 
-	buffer = malloc(block_count() << ssd_features.lba_shift);
+	if (argc != 2) {
+		fprintf(stderr, "Usage: %s pattern.so\n", argv[0]);
+		exit(1);
+	}
+
+	// Get pattern to execute from the dynamic linker.
+	void *handle = dlopen(argv[1], RTLD_LAZY);
+	struct pattern *pattern = dlsym(handle, "pattern");
+	char *error = dlerror();
+	if (error != NULL) {
+		fprintf(stderr, "%s\n", error);
+		exit(1);
+	}
+
+	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
 
 	struct timeval t;
 	gettimeofday(&t, NULL);
@@ -62,7 +77,7 @@ int main(int argc, char **argv) {
 	long block_count = 0;
 	struct cmd cmd;
 	for (;;) {
-		cmd = next_cmd();
+		cmd = pattern->next_cmd();
 		switch (cmd.op) {
 		case OP_WRITE:
 			for (int todo = cmd.block_count; todo > 0; todo -= ssd_features.max_block_count) {
@@ -87,5 +102,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	dlclose(handle);
 	return 0;
 }

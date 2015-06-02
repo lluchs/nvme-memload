@@ -14,23 +14,13 @@
  * limitations under the License.
  */
 
-#include "control.h"
+#include "pattern.h"
 
-int block_count() {
-	return 100;
+static int block_count() {
+	return 31;
 }
 
-/* Always write to the full buffer. */
-struct cmd next_cmd() {
-	return (struct cmd) {
-		.op = OP_WRITE,
-		.block_count = block_count(),
-		.target_block = 0
-	};
-}
-// */
-
-/* Sequentially write a single block to memory. * /
+/* Sequentially write a single block to memory. */
 struct cmd next_cmd() {
 	static int current = 0;
 	current %= block_count();
@@ -40,4 +30,8 @@ struct cmd next_cmd() {
 		.target_block = current++
 	};
 }
-// */
+
+struct pattern pattern = {
+	.block_count = block_count,
+	.next_cmd = next_cmd
+};

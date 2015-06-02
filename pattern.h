@@ -27,8 +27,10 @@ struct cmd {
 	int target_block;
 };
 
-// Returns the size of the memory buffer in blocks.
-int block_count();
+struct pattern {
+	// Returns the size of the memory buffer in blocks.
+	int (*block_count)();
 
-// Returns the next thing to do.
-struct cmd next_cmd();
+	// Returns the next thing to do.
+	struct cmd (*next_cmd)();
+};

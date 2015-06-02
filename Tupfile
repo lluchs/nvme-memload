@@ -1,6 +1,8 @@
-CFLAGS += -std=c11
-CFLAGS += -Wall -Werror
-
+include_rules
 .gitignore
-: foreach *.c |> cc -c %f $(CFLAGS) -o %o |> %B.o
-: *.o |> cc %f -lm -o %o |> nvme-memload
+
+LDFLAGS += -rdynamic
+LDFLAGS += -ldl
+
+: foreach *.c |> !cc |>
+: *.o |> !ld |> nvme-memload

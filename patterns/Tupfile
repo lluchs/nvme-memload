@@ -1,0 +1,10 @@
+include_rules
+.gitignore
+
+CFLAGS += -fPIC
+CFLAGS += -I..
+
+LDFLAGS += -shared
+
+: foreach *.c |> !cc |>
+: foreach *.o |> !ld |> %B.so
