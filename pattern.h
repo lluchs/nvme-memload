@@ -28,6 +28,8 @@ struct cmd {
 };
 
 struct pattern {
+	const char *desc;
+
 	// Returns the size of the memory buffer in blocks.
 	int (*block_count)();
 

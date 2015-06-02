@@ -52,8 +52,8 @@ int main(int argc, char **argv) {
 	open_nvme(DEVICE);
 	get_ssd_features();
 
-	fprintf(stderr, "Block size: %i\n", 1 << ssd_features.lba_shift);
-	fprintf(stderr, "Max block count: %i\n", ssd_features.max_block_count);
+	printf("Block size: %i\n", 1 << ssd_features.lba_shift);
+	printf("Max block count: %i\n", ssd_features.max_block_count);
 
 	if (argc != 2) {
 		fprintf(stderr, "Usage: %s pattern.so\n", argv[0]);
@@ -68,6 +68,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "%s\n", error);
 		exit(1);
 	}
+	printf("Pattern loaded: %s\n%s\n\n", argv[1], pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
 

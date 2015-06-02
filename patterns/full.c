@@ -30,6 +30,7 @@ static struct cmd next_cmd() {
 }
 
 struct pattern pattern = {
+	.desc = "Sequentially write as much as possible at once.",
 	.block_count = block_count,
 	.next_cmd = next_cmd
 };

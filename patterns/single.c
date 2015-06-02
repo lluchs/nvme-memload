@@ -32,6 +32,7 @@ struct cmd next_cmd() {
 }
 
 struct pattern pattern = {
+	.desc = "Sequentially write a single block.",
 	.block_count = block_count,
 	.next_cmd = next_cmd
 };
