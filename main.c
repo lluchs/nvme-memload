@@ -61,8 +61,8 @@ static void perform_io(struct cmd *cmd) {
 }
 
 int main(int argc, char **argv) {
-	if (argc != 3) {
-		fprintf(stderr, "Usage: %s /dev/nvme0n1 pattern.so\n", argv[0]);
+	if (argc < 3) {
+		fprintf(stderr, "Usage: %s /dev/nvme0n1 pattern.so [options]\n", argv[0]);
 		exit(1);
 	}
 
@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "%s\n", error);
 		exit(1);
 	}
+	if (pattern->parse_arguments != NULL) pattern->parse_arguments(argc - 2, argv + 2);
 	printf("Memory buffer size: %"PRIu64" blocks (%"PRIu64" MiB)\n", pattern->block_count(), (pattern->block_count() << ssd_features.lba_shift) >> 20);
 	printf("Pattern loaded: %s\n%s\n\n", argv[2], pattern->desc);
 

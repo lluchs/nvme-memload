@@ -14,22 +14,6 @@
  * limitations under the License.
  */
 
-#include "pattern.h"
-#include "random.h"
-#include "common/options.h"
-
-/* Always write to the full buffer. */
-static struct cmd next_cmd(struct ssd_features *ssd_features) {
-	return (struct cmd) {
-		.op = opt_operation(),
-		.block_count = ssd_features->max_block_count - 1,
-		.target_block = get_random_block(opt_block_count(), ssd_features->max_block_count - 1)
-	};
-}
-
-struct pattern pattern = {
-	.desc = "Accesses random disk blocks in large chunks.",
-	.parse_arguments = parse_options,
-	.block_count = opt_block_count,
-	.next_cmd = next_cmd
-};
+void parse_options(int argc, char **argv);
+uint64_t opt_block_count();
+int opt_operation();

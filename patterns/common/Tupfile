@@ -1,0 +1,7 @@
+include_rules
+
+CFLAGS += -fPIC
+CFLAGS += -I../..
+
+: foreach *.c |> !cc |>
+: *.o |> ar rcs %o %f |> libpatterncommon.a

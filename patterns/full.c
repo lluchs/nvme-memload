@@ -15,15 +15,12 @@
  */
 
 #include "pattern.h"
-
-static uint64_t block_count() {
-	return 1000000;
-}
+#include "common/options.h"
 
 /* Always write to the full buffer. */
 static struct cmd next_cmd(struct ssd_features *ssd_features) {
 	static uint64_t todo = 0;
-	uint64_t count = block_count();
+	uint64_t count = opt_block_count();
 	if (todo == 0) todo = count;
 
 	size_t target_block = count - todo;
@@ -33,7 +30,7 @@ static struct cmd next_cmd(struct ssd_features *ssd_features) {
 		todo = 0;
 
 	return (struct cmd) {
-		.op = OP_WRITE,
+		.op = opt_operation(),
 		// XXX: Why is -1 necessary here?
 		.block_count = MIN(todo, ssd_features->max_block_count - 1),
 		.target_block = target_block
@@ -41,7 +38,8 @@ static struct cmd next_cmd(struct ssd_features *ssd_features) {
 }
 
 struct pattern pattern = {
-	.desc = "Sequentially write as much as possible at once.",
-	.block_count = block_count,
+	.desc = "Sequentially access as much as possible at once.",
+	.parse_arguments = parse_options,
+	.block_count = opt_block_count,
 	.next_cmd = next_cmd
 };

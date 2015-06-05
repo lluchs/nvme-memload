@@ -15,24 +15,22 @@
  */
 
 #include "pattern.h"
-
-static uint64_t block_count() {
-	return 31;
-}
+#include "common/options.h"
 
 /* Sequentially write a single block to memory. */
 struct cmd next_cmd() {
 	static int current = 0;
-	current %= block_count();
+	current %= opt_block_count();
 	return (struct cmd) {
-		.op = OP_WRITE,
+		.op = opt_operation(),
 		.block_count = 1,
 		.target_block = current++
 	};
 }
 
 struct pattern pattern = {
-	.desc = "Sequentially write a single block.",
-	.block_count = block_count,
+	.desc = "Sequentially access a single block.",
+	.parse_arguments = parse_options,
+	.block_count = opt_block_count,
 	.next_cmd = next_cmd
 };

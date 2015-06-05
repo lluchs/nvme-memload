@@ -47,6 +47,9 @@ struct cmd {
 struct pattern {
 	const char *desc;
 
+	// Function to parse command line arguments.
+	void (*parse_arguments)(int, char**);
+
 	// Returns the size of the memory buffer in blocks.
 	uint64_t (*block_count)();
 
