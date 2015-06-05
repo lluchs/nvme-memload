@@ -1,5 +1,4 @@
 include_rules
-.gitignore
 
 CFLAGS += -fPIC
 CFLAGS += -I..
