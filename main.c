@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <time.h>
 #include "nvme.h"
 #include "pattern.h"
 #include "random.h"
@@ -93,8 +93,8 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	struct timeval t;
-	gettimeofday(&t, NULL);
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &t);
 	time_t sec = t.tv_sec;
 	uint64_t block_count = 0, command_count = 0;
 	struct cmd cmd;
@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
 			exit(1);
 		}
-		gettimeofday(&t, NULL);
+		clock_gettime(CLOCK_MONOTONIC_COARSE, &t);
 		if (sec != t.tv_sec) {
 			printf("%"PRIu64" blocks/s (%"PRIu64" MiB/s)", block_count, (block_count << ssd_features.lba_shift) >> 20);
 			// Show command number and size when it's large enough to matter.
