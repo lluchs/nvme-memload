@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
 	struct timeval t;
 	gettimeofday(&t, NULL);
 	time_t sec = t.tv_sec;
-	uint64_t block_count = 0;
+	uint64_t block_count = 0, command_count = 0;
 	struct cmd cmd;
 	for (;;) {
 		cmd = pattern->next_cmd(&ssd_features);
@@ -105,6 +105,7 @@ int main(int argc, char **argv) {
 		case OP_READ:
 			perform_io(&cmd);
 			block_count += cmd.block_count;
+			command_count++;
 			break;
 		default:
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
@@ -112,8 +113,15 @@ int main(int argc, char **argv) {
 		}
 		gettimeofday(&t, NULL);
 		if (sec != t.tv_sec) {
-			printf("%ld blocks/s (%ld MiB/s)\n", block_count, (block_count << ssd_features.lba_shift) >> 20);
+			printf("%"PRIu64" blocks/s (%"PRIu64" MiB/s)", block_count, (block_count << ssd_features.lba_shift) >> 20);
+			// Show command number and size when it's large enough to matter.
+			uint64_t command_size = (command_count * (sizeof(struct nvme_rw_command) + sizeof(struct nvme_completion))) >> 20;
+			if (command_size)
+				printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
+			else
+				putchar('\n');
 			block_count = 0;
+			command_count = 0;
 			sec = t.tv_sec;
 		}
 	}
