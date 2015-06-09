@@ -20,7 +20,7 @@
 /* Sequentially write a single block to memory. */
 struct cmd next_cmd() {
 	static int current = 0;
-	current %= opt_block_count();
+	current %= opt_block_count() - 1;
 	return (struct cmd) {
 		.op = opt_operation(),
 		.block_count = 1,
