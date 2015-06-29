@@ -16,12 +16,12 @@
 
 #include <dlfcn.h>
 #include <inttypes.h>
-#include <linux/nvme.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "linux/nvme.h" // Local header with additions.
 #include "nvme.h"
 #include "pattern.h"
 #include "random.h"

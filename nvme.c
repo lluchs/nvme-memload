@@ -25,15 +25,19 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
-#include <linux/nvme.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include "linux/nvme.h"
 
 static int fd;
+
+#define BATCH_COUNT 1000
+static struct nvme_batch_user_io *batch_io;
 
 static const char *nvme_status_to_string(__u32 status)
 {
@@ -84,6 +88,14 @@ static void handle_nvme_error(const char *cmd, int err) {
 		fprintf(stderr, "%s:%s(%04x)\n", cmd, nvme_status_to_string(err), err);
 }
 
+// Checks whether the NVMe driver supports our custom commands.
+static bool nvme_has_custom_driver() {
+	// Memoize the result.
+	static int result = -1;
+	return result != -1 ? result : (result = ioctl(fd, NVME_IOCTL_SUPPORTS_CUSTOM_CMDS) == 1);
+}
+
+
 void nvme_open(const char *dev) {
 	int err;
 	fd = open(dev, O_RDONLY);
@@ -97,6 +109,11 @@ void nvme_open(const char *dev) {
 	if (!S_ISCHR(nvme_stat.st_mode) && !S_ISBLK(nvme_stat.st_mode)) {
 		fprintf(stderr, "%s is not a block or character device\n", dev);
 		exit(ENODEV);
+	}
+	if (nvme_has_custom_driver()) {
+		fprintf(stderr, "Custom driver commands are available.\n");
+		batch_io = malloc(sizeof(*batch_io) + BATCH_COUNT * sizeof(batch_io->cmds[0]));
+		batch_io->count = BATCH_COUNT;
 	}
 	return;
 perror:
@@ -121,8 +138,10 @@ int nvme_identify(void *ptr, int cns) {
 }
 
 int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
+	static int i = 0;
+
 	struct nvme_user_io io;
-	int err;
+	int err = 0;
 
 	memset(&io, 0, sizeof(io));
 
@@ -131,7 +150,18 @@ int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
 	io.nblocks = block_count;
 	io.addr    = (__u64)buffer;
 
-	err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
-	handle_nvme_error("read", err);
+	if (nvme_has_custom_driver()) {
+		// With the custom driver, we buffer commands for submission to save on
+		// syscalls.
+		batch_io->cmds[i++] = io;
+		if (i == BATCH_COUNT) {
+			err = ioctl(fd, NVME_IOCTL_SUBMIT_BATCH_IO, batch_io);
+			handle_nvme_error("batched read/write", err);
+			i = 0;
+		}
+	} else {
+		err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
+		handle_nvme_error("read/write", err);
+	}
 	return err;
 }
