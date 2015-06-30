@@ -4,7 +4,7 @@ CFLAGS += -std=gnu11
 CFLAGS += -O2
 CFLAGS += -Wall -Werror
 
-LDFLAGS += -lm
+LDFLAGS += -lm -pthread
 
 !cc = |> cc -c %f $(CFLAGS) -o %o |> %B.o
 !ld = |> cc %f $(CFLAGS) $(LDFLAGS) -o %o |>

@@ -18,10 +18,12 @@
 #include <inttypes.h>
 #include <libgen.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sched.h>
 #include <time.h>
 #include <unistd.h>
 #include "linux/nvme.h" // Local header with additions.
@@ -31,6 +33,23 @@
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
+static struct pattern *pattern;
+
+static struct {
+	bool cache_once;
+	bool cache_always;
+	int parallelism;
+} opts = {
+	.cache_once = false,
+	.cache_always = false,
+	.parallelism = 1,
+};
+
+struct worker_state {
+	pthread_t thread_id;
+	uint64_t block_count;
+	uint64_t command_count;
+};
 
 // Used to move values to the cache, must not be optimized out.
 uint8_t dummy_sum;
@@ -90,10 +109,38 @@ static void put_in_cache(size_t start, size_t count) {
 	}
 }
 
+static void init_worker(struct worker_state *state) {
+	state->block_count = 0;
+	state->command_count = 0;
+}
+
+static void *run_worker(void *arg) {
+	struct worker_state *state = arg;
+	struct cmd cmd;
+	for (;;) {
+		cmd = pattern->next_cmd(&ssd_features);
+		switch (cmd.op) {
+		case OP_WRITE:
+		case OP_READ:
+			if (opts.cache_always)
+				put_in_cache(cmd.target_block << ssd_features.lba_shift, cmd.block_count << ssd_features.lba_shift);
+			perform_io(&cmd);
+			state->block_count += cmd.block_count;
+			state->command_count++;
+			break;
+
+		default:
+			fprintf(stderr, "Invalid command %d\n", cmd.op);
+			exit(1);
+		}
+	}
+}
+
 static void usage(char *name) {
 	fprintf(stderr, "Usage: %s [options] /dev/nvme0n1 pattern [pattern options]\n", name);
 	fprintf(stderr, "\nOptions:\n");
-	fprintf(stderr, "\t-c mode\tMake sure blocks are cached once/always before reading/writing.\n");
+	fprintf(stderr, "\t-c mode\tMake sure blocks are cached <once/always> before reading/writing.\n");
+	fprintf(stderr, "\t-j num\tSend commands in parallel on <num> threads.\n");
 	exit(1);
 }
 
@@ -105,19 +152,20 @@ int main(int argc, char **argv) {
 	setlinebuf(stdout);
 
 	// Options
-	bool opt_cache_once = false;
-	bool opt_cache_always = false;
 	int opt;
 	// +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:j:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
-				opt_cache_once = true;
+				opts.cache_once = true;
 			else if (!strcmp(optarg, "always"))
-				opt_cache_always = true;
+				opts.cache_always = true;
 			else
 				usage(argv[0]);
+			break;
+		case 'j':
+			opts.parallelism = atoi(optarg);
 			break;
 		case 'h':
 		default:
@@ -138,7 +186,7 @@ int main(int argc, char **argv) {
 	char *pattern_path = get_pattern_path(argv[optind + 1]);
 	printf("Loading pattern %s\n", pattern_path);
 	void *handle = dlopen(pattern_path, RTLD_LAZY);
-	struct pattern *pattern = dlsym(handle, "pattern");
+	pattern = dlsym(handle, "pattern");
 	char *error = dlerror();
 	if (error != NULL) {
 		fprintf(stderr, "%s\n", error);
@@ -153,43 +201,37 @@ int main(int argc, char **argv) {
 		perror("malloc");
 		exit(1);
 	}
-	if (opt_cache_once)
+	if (opts.cache_once)
 		put_in_cache(0, pattern->block_count() << ssd_features.lba_shift);
 
-	struct timespec t;
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &t);
-	time_t sec = t.tv_sec;
-	uint64_t block_count = 0, command_count = 0;
-	struct cmd cmd;
-	for (;;) {
-		cmd = pattern->next_cmd(&ssd_features);
-		switch (cmd.op) {
-		case OP_WRITE:
-		case OP_READ:
-			if (opt_cache_always)
-				put_in_cache(cmd.target_block << ssd_features.lba_shift, cmd.block_count << ssd_features.lba_shift);
-			perform_io(&cmd);
-			block_count += cmd.block_count;
-			command_count++;
-			break;
+	struct worker_state workers[opts.parallelism];
+	for (int i = 0; i < opts.parallelism; i++) {
+		init_worker(&workers[i]);
+		pthread_create(&workers[i].thread_id, NULL, run_worker, &workers[i]);
+	}
 
-		default:
-			fprintf(stderr, "Invalid command %d\n", cmd.op);
-			exit(1);
+	struct timespec t = { .tv_sec = 1, .tv_nsec = 0 };
+	uint64_t block_count, command_count;
+	for (;;) {
+		nanosleep(&t, NULL);
+
+		block_count = 0; command_count = 0;
+		for (int i = 0; i < opts.parallelism; i++) {
+			// XXX: Race condition
+			block_count += workers[i].block_count;
+			command_count += workers[i].command_count;
+			workers[i].block_count = 0;
+			workers[i].command_count = 0;
 		}
-		clock_gettime(CLOCK_MONOTONIC_COARSE, &t);
-		if (sec != t.tv_sec) {
-			printf("%"PRIu64" blocks/s (%"PRIu64" MiB/s)", block_count, (block_count << ssd_features.lba_shift) >> 20);
-			// Show command number and size when it's large enough to matter.
-			uint64_t command_size = (command_count * (sizeof(struct nvme_rw_command) + sizeof(struct nvme_completion))) >> 20;
-			if (command_size)
-				printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
-			else
-				putchar('\n');
-			block_count = 0;
-			command_count = 0;
-			sec = t.tv_sec;
-		}
+		printf("%"PRIu64" blocks/s (%"PRIu64" MiB/s)", block_count, (block_count << ssd_features.lba_shift) >> 20);
+		// Show command number and size when it's large enough to matter.
+		uint64_t command_size = (command_count * (sizeof(struct nvme_rw_command) + sizeof(struct nvme_completion))) >> 20;
+		if (command_size)
+			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
+		else
+			putchar('\n');
+		block_count = 0;
+		command_count = 0;
 	}
 
 	dlclose(handle);
