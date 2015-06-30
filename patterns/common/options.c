@@ -28,6 +28,7 @@ static int operation = OP_WRITE;
 // Parses command-line arguments.
 void parse_options(int argc, char **argv) {
 	int opt;
+	optind = 1;
 	while ((opt = getopt(argc, argv, "hb:o:")) != -1) {
 		switch (opt) {
 		case 'b':
