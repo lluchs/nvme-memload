@@ -86,6 +86,10 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	// stdout is block buffered when writing to a file which may prevent output
+	// from showing up in the benchmark log. Always using line buffering fixes this.
+	setlinebuf(stdout);
+
 	init_random();
 	nvme_open(argv[1]);
 	get_ssd_features();
