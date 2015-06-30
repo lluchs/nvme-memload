@@ -16,11 +16,13 @@
 
 #include <dlfcn.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "linux/nvme.h" // Local header with additions.
 #include "nvme.h"
 #include "pattern.h"
@@ -28,6 +30,24 @@
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
+
+static char *get_pattern_path(char *pattern) {
+	static char buffer[255];
+	char *ext = strrchr(pattern, '.');
+	// Ends with .so => assume it's a path.
+	if (ext && !strcmp(ext, ".so")) return pattern;
+	// Construct path relative to executable.
+	if (readlink("/proc/self/exe", buffer, sizeof(buffer)) < 0) {
+		fprintf(stderr, "Could not resolve pattern path.\n");
+		return pattern;
+	}
+	char *dir = dirname(buffer);
+	// dirname will most likely modify buffer.
+	memmove(buffer, dir, sizeof(buffer));
+	size_t len = strlen(buffer);
+	snprintf(buffer + len, sizeof(buffer) - len, "/patterns/%s.so", pattern);
+	return buffer;
+}
 
 static void get_ssd_features() {
 	int err;
@@ -76,7 +96,9 @@ int main(int argc, char **argv) {
 	printf("Max block count: %i blocks per command\n", ssd_features.max_block_count);
 
 	// Get pattern to execute from the dynamic linker.
-	void *handle = dlopen(argv[2], RTLD_LAZY);
+	char *pattern_path = get_pattern_path(argv[2]);
+	printf("Loading pattern %s\n", pattern_path);
+	void *handle = dlopen(pattern_path, RTLD_LAZY);
 	struct pattern *pattern = dlsym(handle, "pattern");
 	char *error = dlerror();
 	if (error != NULL) {
