@@ -84,9 +84,7 @@ static void perform_io(struct cmd *cmd) {
 	if (err != 0) exit(1);
 }
 
-static void put_in_cache(struct cmd *cmd) {
-	size_t count = cmd->block_count << ssd_features.lba_shift;
-	size_t start = cmd->target_block << ssd_features.lba_shift;
+static void put_in_cache(size_t start, size_t count) {
 	for (size_t i = 0; i < count; i++) {
 		dummy_sum += buffer[start + i];
 	}
@@ -95,7 +93,7 @@ static void put_in_cache(struct cmd *cmd) {
 static void usage(char *name) {
 	fprintf(stderr, "Usage: %s [options] /dev/nvme0n1 pattern [pattern options]\n", name);
 	fprintf(stderr, "\nOptions:\n");
-	fprintf(stderr, "\t-c\tMake sure blocks are cached before reading/writing.\n");
+	fprintf(stderr, "\t-c mode\tMake sure blocks are cached once/always before reading/writing.\n");
 	exit(1);
 }
 
@@ -107,13 +105,19 @@ int main(int argc, char **argv) {
 	setlinebuf(stdout);
 
 	// Options
-	bool opt_cache = false;
+	bool opt_cache_once = false;
+	bool opt_cache_always = false;
 	int opt;
 	// +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+ch")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:h")) != -1) {
 		switch (opt) {
 		case 'c':
-			opt_cache = true;
+			if (!strcmp(optarg, "once"))
+				opt_cache_once = true;
+			else if (!strcmp(optarg, "always"))
+				opt_cache_always = true;
+			else
+				usage(argv[0]);
 			break;
 		case 'h':
 		default:
@@ -149,6 +153,8 @@ int main(int argc, char **argv) {
 		perror("malloc");
 		exit(1);
 	}
+	if (opt_cache_once)
+		put_in_cache(0, pattern->block_count() << ssd_features.lba_shift);
 
 	struct timespec t;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &t);
@@ -160,7 +166,8 @@ int main(int argc, char **argv) {
 		switch (cmd.op) {
 		case OP_WRITE:
 		case OP_READ:
-			if (opt_cache) put_in_cache(&cmd);
+			if (opt_cache_always)
+				put_in_cache(cmd.target_block << ssd_features.lba_shift, cmd.block_count << ssd_features.lba_shift);
 			perform_io(&cmd);
 			block_count += cmd.block_count;
 			command_count++;
