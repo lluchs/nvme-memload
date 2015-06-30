@@ -18,6 +18,7 @@
 #include <inttypes.h>
 #include <libgen.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,9 @@
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
+
+// Used to move values to the cache, must not be optimized out.
+uint8_t dummy_sum;
 
 static char *get_pattern_path(char *pattern) {
 	static char buffer[255];
@@ -80,18 +84,45 @@ static void perform_io(struct cmd *cmd) {
 	if (err != 0) exit(1);
 }
 
-int main(int argc, char **argv) {
-	if (argc < 3) {
-		fprintf(stderr, "Usage: %s /dev/nvme0n1 pattern.so [options]\n", argv[0]);
-		exit(1);
+static void put_in_cache(struct cmd *cmd) {
+	size_t count = cmd->block_count << ssd_features.lba_shift;
+	size_t start = cmd->target_block << ssd_features.lba_shift;
+	for (size_t i = 0; i < count; i++) {
+		dummy_sum += buffer[start + i];
 	}
+}
+
+static void usage(char *name) {
+	fprintf(stderr, "Usage: %s [options] /dev/nvme0n1 pattern [pattern options]\n", name);
+	fprintf(stderr, "\nOptions:\n");
+	fprintf(stderr, "\t-c\tMake sure blocks are cached before reading/writing.\n");
+	exit(1);
+}
+
+int main(int argc, char **argv) {
+	if (argc < 3) usage(argv[0]);
 
 	// stdout is block buffered when writing to a file which may prevent output
 	// from showing up in the benchmark log. Always using line buffering fixes this.
 	setlinebuf(stdout);
 
+	// Options
+	bool opt_cache = false;
+	int opt;
+	// +: Stop parsing arguments when the first non-option is encountered.
+	while ((opt = getopt(argc, argv, "+ch")) != -1) {
+		switch (opt) {
+		case 'c':
+			opt_cache = true;
+			break;
+		case 'h':
+		default:
+			usage(argv[0]);
+		}
+	}
+
 	init_random();
-	nvme_open(argv[1]);
+	nvme_open(argv[optind]);
 	get_ssd_features();
 
 	printf("SSD: %s (%s)\n", ssd_features.mn, ssd_features.sn);
@@ -100,7 +131,7 @@ int main(int argc, char **argv) {
 	printf("Max block count: %i blocks per command\n", ssd_features.max_block_count);
 
 	// Get pattern to execute from the dynamic linker.
-	char *pattern_path = get_pattern_path(argv[2]);
+	char *pattern_path = get_pattern_path(argv[optind + 1]);
 	printf("Loading pattern %s\n", pattern_path);
 	void *handle = dlopen(pattern_path, RTLD_LAZY);
 	struct pattern *pattern = dlsym(handle, "pattern");
@@ -109,9 +140,9 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "%s\n", error);
 		exit(1);
 	}
-	if (pattern->parse_arguments != NULL) pattern->parse_arguments(argc - 2, argv + 2);
+	if (pattern->parse_arguments != NULL) pattern->parse_arguments(argc - 2, argv + optind + 1);
 	printf("Memory buffer size: %"PRIu64" blocks (%"PRIu64" MiB)\n", pattern->block_count(), (pattern->block_count() << ssd_features.lba_shift) >> 20);
-	printf("Pattern loaded: %s\n%s\n\n", argv[2], pattern->desc);
+	printf("Pattern loaded: %s\n%s\n\n", argv[optind + 1], pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
 	if (buffer == NULL) {
@@ -129,10 +160,12 @@ int main(int argc, char **argv) {
 		switch (cmd.op) {
 		case OP_WRITE:
 		case OP_READ:
+			if (opt_cache) put_in_cache(&cmd);
 			perform_io(&cmd);
 			block_count += cmd.block_count;
 			command_count++;
 			break;
+
 		default:
 			fprintf(stderr, "Invalid command %d\n", cmd.op);
 			exit(1);
