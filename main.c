@@ -33,6 +33,7 @@
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
+static pthread_mutex_t pattern_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct pattern *pattern;
 
 static struct {
@@ -118,7 +119,9 @@ static void *run_worker(void *arg) {
 	struct worker_state *state = arg;
 	struct cmd cmd;
 	for (;;) {
+		pthread_mutex_lock(&pattern_mutex);
 		cmd = pattern->next_cmd(&ssd_features);
+		pthread_mutex_unlock(&pattern_mutex);
 		switch (cmd.op) {
 		case OP_WRITE:
 		case OP_READ:
