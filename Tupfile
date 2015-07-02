@@ -2,6 +2,7 @@ include_rules
 
 LDFLAGS += -rdynamic
 LDFLAGS += -ldl
+LDFLAGS += -pthread
 
 : foreach *.c |> !cc |>
 : *.o |> !ld |> nvme-memload
