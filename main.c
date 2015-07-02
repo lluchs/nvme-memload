@@ -35,15 +35,20 @@ static uint8_t *buffer;
 static struct ssd_features ssd_features;
 static pthread_mutex_t pattern_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct pattern *pattern;
+static long long limit;
+static pthread_mutex_t limit_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t limit_cond = PTHREAD_COND_INITIALIZER;
 
 static struct {
 	bool cache_once;
 	bool cache_always;
 	int parallelism;
+	long long limit;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
 	.parallelism = 1,
+	.limit = 0,
 };
 
 struct worker_state {
@@ -119,24 +124,29 @@ static void *run_worker(void *arg) {
 	struct worker_state *state = arg;
 	struct cmd cmd;
 	for (;;) {
+		// Get a new command. The patterns usually have internal state, so we need a mutex.
 		pthread_mutex_lock(&pattern_mutex);
 		cmd = pattern->next_cmd(&ssd_features);
 		pthread_mutex_unlock(&pattern_mutex);
-		switch (cmd.op) {
-		case OP_WRITE:
-		case OP_READ:
-			if (opts.cache_always)
-				put_in_cache(cmd.target_block << ssd_features.lba_shift, cmd.block_count << ssd_features.lba_shift);
-			perform_io(&cmd);
-			state->block_count += cmd.block_count;
-			state->command_count++;
-			break;
 
-		default:
-			fprintf(stderr, "Invalid command %d\n", cmd.op);
-			exit(1);
+		if (opts.limit > 0) {
+			// The limit is shared by all workers and periodically reset by the main thread.
+			pthread_mutex_lock(&limit_mutex);
+			while (limit <= 0) pthread_cond_wait(&limit_cond, &limit_mutex);
+			// Allow a single operation to go over the limit.
+			limit -= cmd.block_count;
+			pthread_mutex_unlock(&limit_mutex);
 		}
+
+		if (opts.cache_always)
+			put_in_cache(cmd.target_block << ssd_features.lba_shift, cmd.block_count << ssd_features.lba_shift);
+
+		perform_io(&cmd);
+
+		state->block_count += cmd.block_count;
+		state->command_count++;
 	}
+	return NULL;
 }
 
 static void usage(char *name) {
@@ -144,6 +154,7 @@ static void usage(char *name) {
 	fprintf(stderr, "\nOptions:\n");
 	fprintf(stderr, "\t-c mode\tMake sure blocks are cached <once/always> before reading/writing.\n");
 	fprintf(stderr, "\t-j num\tSend commands in parallel on <num> threads.\n");
+	fprintf(stderr, "\t-l num\tLimit transfers to <num> blocks/s.\n");
 	exit(1);
 }
 
@@ -155,9 +166,8 @@ int main(int argc, char **argv) {
 	setlinebuf(stdout);
 
 	// Options
-	int opt;
-	// +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:h")) != -1) {
+	int opt; // +: Stop parsing arguments when the first non-option is encountered.
+	while ((opt = getopt(argc, argv, "+c:j:l:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -169,6 +179,9 @@ int main(int argc, char **argv) {
 			break;
 		case 'j':
 			opts.parallelism = atoi(optarg);
+			break;
+		case 'l':
+			opts.limit = atoll(optarg);
 			break;
 		case 'h':
 		default:
@@ -207,6 +220,8 @@ int main(int argc, char **argv) {
 	if (opts.cache_once)
 		put_in_cache(0, pattern->block_count() << ssd_features.lba_shift);
 
+	limit = opts.limit;
+
 	struct worker_state workers[opts.parallelism];
 	for (int i = 0; i < opts.parallelism; i++) {
 		init_worker(&workers[i]);
@@ -233,8 +248,14 @@ int main(int argc, char **argv) {
 			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
 		else
 			putchar('\n');
-		block_count = 0;
-		command_count = 0;
+
+		if (opts.limit > 0) {
+			// Reset the limit and notify all workers.
+			pthread_mutex_lock(&limit_mutex);
+			limit = opts.limit;
+			pthread_cond_broadcast(&limit_cond);
+			pthread_mutex_unlock(&limit_mutex);
+		}
 	}
 
 	dlclose(handle);
