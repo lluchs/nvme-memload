@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
 	}
 	if (pattern->parse_arguments != NULL) pattern->parse_arguments(argc - optind - 1, argv + optind + 1);
 	printf("Memory buffer size: %"PRIu64" blocks (%"PRIu64" MiB)\n", pattern->block_count(), (pattern->block_count() << ssd_features.lba_shift) >> 20);
-	printf("Pattern loaded: %s\n%s\n\n", argv[optind + 1], pattern->desc);
+	printf("Pattern loaded: %s\n\n", pattern->desc);
 
 	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
 	if (buffer == NULL) {
