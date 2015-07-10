@@ -38,7 +38,7 @@ static int fd;
 static uint32_t nsid;
 
 #define BATCH_COUNT 1000
-static struct nvme_batch_user_io *batch_io;
+static __thread struct nvme_batch_user_io *batch_io;
 
 static const char *nvme_status_to_string(__u32 status)
 {
@@ -96,6 +96,12 @@ static bool nvme_has_custom_driver() {
 	return result != -1 ? result : (result = ioctl(fd, NVME_IOCTL_SUPPORTS_CUSTOM_CMDS) == 1);
 }
 
+// Needs to be called for every thread doing batch IO.
+static void init_batch_io() {
+	batch_io = malloc(sizeof(*batch_io) + BATCH_COUNT * sizeof(batch_io->cmds[0]));
+	batch_io->count = BATCH_COUNT;
+}
+
 
 void nvme_open(const char *dev) {
 	int err;
@@ -113,8 +119,6 @@ void nvme_open(const char *dev) {
 	}
 	if (nvme_has_custom_driver()) {
 		fprintf(stderr, "Custom driver commands are available.\n");
-		batch_io = malloc(sizeof(*batch_io) + BATCH_COUNT * sizeof(batch_io->cmds[0]));
-		batch_io->count = BATCH_COUNT;
 	}
 
 	nsid = ioctl(fd, NVME_IOCTL_ID);
@@ -141,7 +145,7 @@ int nvme_identify(void *ptr, int cns) {
 }
 
 int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
-	static int i = 0;
+	static __thread int i = 0;
 
 	struct nvme_user_io io;
 	int err = 0;
@@ -154,6 +158,7 @@ int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
 	io.addr    = (__u64)buffer;
 
 	if (nvme_has_custom_driver()) {
+		if (!batch_io) init_batch_io();
 		// With the custom driver, we buffer commands for submission to save on
 		// syscalls.
 		batch_io->cmds[i++] = io;
