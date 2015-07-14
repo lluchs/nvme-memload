@@ -23,6 +23,7 @@
 enum {
 	// These correspond to the NVMe opcodes. Note that NVMe commands are from
 	// SSD perspective.
+	OP_FLUSH = 0, // dummy command, no reading/writing
 	OP_READ  = 1, // read from memory
 	OP_WRITE = 2, // write to memory
 };

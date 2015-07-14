@@ -101,11 +101,15 @@ static void perform_io(struct cmd *cmd) {
 	uint64_t ssd_block = 0;
 	// Randomize SSD write target for optimal performance.
 	if (cmd->op == OP_READ) ssd_block = get_random_block(ssd_features.size, cmd->block_count);
-	err = nvme_io(
-			cmd->op,
-			buffer + (cmd->target_block << ssd_features.lba_shift),
-			ssd_block,
-			cmd->block_count);
+	if (cmd->op == OP_FLUSH) {
+		err = nvme_io_cmd(cmd->op);
+	} else {
+		err = nvme_io(
+				cmd->op,
+				buffer + (cmd->target_block << ssd_features.lba_shift),
+				ssd_block,
+				cmd->block_count);
+	}
 	if (err != 0) exit(1);
 }
 

@@ -35,6 +35,7 @@
 #include "linux/nvme.h"
 
 static int fd;
+static uint32_t nsid;
 
 #define BATCH_COUNT 1000
 static struct nvme_batch_user_io *batch_io;
@@ -115,6 +116,8 @@ void nvme_open(const char *dev) {
 		batch_io = malloc(sizeof(*batch_io) + BATCH_COUNT * sizeof(batch_io->cmds[0]));
 		batch_io->count = BATCH_COUNT;
 	}
+
+	nsid = ioctl(fd, NVME_IOCTL_ID);
 	return;
 perror:
 	perror(dev);
@@ -128,7 +131,7 @@ int nvme_identify(void *ptr, int cns) {
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.opcode = nvme_admin_identify;
-	cmd.nsid = ioctl(fd, NVME_IOCTL_ID);
+	cmd.nsid = nsid;
 	cmd.addr = (unsigned long)ptr;
 	cmd.data_len = 4096;
 	cmd.cdw10 = cns;
@@ -163,5 +166,15 @@ int nvme_io(int op, void *buffer, __u64 start_block, __u16 block_count) {
 		err = ioctl(fd, NVME_IOCTL_SUBMIT_IO, &io);
 		handle_nvme_error("read/write", err);
 	}
+	return err;
+}
+
+int nvme_io_cmd(int op) {
+	struct nvme_passthru_cmd cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.opcode = op;
+	cmd.nsid = nsid;
+	int err = ioctl(fd, NVME_IOCTL_IO_CMD, &cmd);
+	handle_nvme_error("io cmd", err);
 	return err;
 }
