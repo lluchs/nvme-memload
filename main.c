@@ -35,7 +35,7 @@ static uint8_t *buffer;
 static struct ssd_features ssd_features;
 static pthread_mutex_t pattern_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct pattern *pattern;
-static long long limit;
+static long long block_limit, command_limit;
 static pthread_mutex_t limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t limit_cond = PTHREAD_COND_INITIALIZER;
 
@@ -43,12 +43,14 @@ static struct {
 	bool cache_once;
 	bool cache_always;
 	int parallelism;
-	long long limit;
+	long long block_limit;
+	long long command_limit;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
 	.parallelism = 1,
-	.limit = 0,
+	.block_limit = 0,
+	.command_limit = 0,
 };
 
 struct worker_state {
@@ -133,12 +135,15 @@ static void *run_worker(void *arg) {
 		cmd = pattern->next_cmd(&ssd_features);
 		pthread_mutex_unlock(&pattern_mutex);
 
-		if (opts.limit > 0) {
+		if (opts.block_limit > 0 || opts.command_limit > 0) {
 			// The limit is shared by all workers and periodically reset by the main thread.
 			pthread_mutex_lock(&limit_mutex);
-			while (limit <= 0) pthread_cond_wait(&limit_cond, &limit_mutex);
+			while ((opts.block_limit   > 0 && block_limit   <= 0)
+			    || (opts.command_limit > 0 && command_limit <= 0))
+				pthread_cond_wait(&limit_cond, &limit_mutex);
 			// Allow a single operation to go over the limit.
-			limit -= cmd.block_count;
+			block_limit -= cmd.block_count;
+			command_limit -= 1;
 			pthread_mutex_unlock(&limit_mutex);
 		}
 
@@ -159,6 +164,7 @@ static void usage(char *name) {
 	fprintf(stderr, "\t-c mode\tMake sure blocks are cached <once/always> before reading/writing.\n");
 	fprintf(stderr, "\t-j num\tSend commands in parallel on <num> threads.\n");
 	fprintf(stderr, "\t-l num\tLimit transfers to <num> blocks/s.\n");
+	fprintf(stderr, "\t-L num\tLimit transfers to <num> commands/s.\n");
 	exit(1);
 }
 
@@ -171,7 +177,7 @@ int main(int argc, char **argv) {
 
 	// Options
 	int opt; // +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:l:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:j:l:L:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -185,7 +191,10 @@ int main(int argc, char **argv) {
 			opts.parallelism = atoi(optarg);
 			break;
 		case 'l':
-			opts.limit = atoll(optarg);
+			opts.block_limit = atoll(optarg);
+			break;
+		case 'L':
+			opts.command_limit = atoll(optarg);
 			break;
 		case 'h':
 		default:
@@ -224,7 +233,8 @@ int main(int argc, char **argv) {
 	if (opts.cache_once)
 		put_in_cache(0, pattern->block_count() << ssd_features.lba_shift);
 
-	limit = opts.limit;
+	block_limit = opts.block_limit;
+	command_limit = opts.command_limit;
 
 	struct worker_state workers[opts.parallelism];
 	for (int i = 0; i < opts.parallelism; i++) {
@@ -253,10 +263,11 @@ int main(int argc, char **argv) {
 		else
 			putchar('\n');
 
-		if (opts.limit > 0) {
+		if (opts.block_limit > 0 || opts.command_limit > 0) {
 			// Reset the limit and notify all workers.
 			pthread_mutex_lock(&limit_mutex);
-			limit = opts.limit;
+			block_limit = opts.block_limit;
+			command_limit = opts.command_limit;
 			pthread_cond_broadcast(&limit_cond);
 			pthread_mutex_unlock(&limit_mutex);
 		}
