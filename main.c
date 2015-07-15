@@ -45,12 +45,14 @@ static struct {
 	int parallelism;
 	long long block_limit;
 	long long command_limit;
+	long limit_resolution;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
 	.parallelism = 1,
 	.block_limit = 0,
 	.command_limit = 0,
+	.limit_resolution = 0,
 };
 
 struct worker_state {
@@ -158,6 +160,29 @@ static void *run_worker(void *arg) {
 	return NULL;
 }
 
+static void *run_limiter(void *arg) {
+	if (!(opts.block_limit > 0 || opts.command_limit > 0)) return NULL;
+
+	long res = opts.limit_resolution;
+	struct timespec t = { .tv_sec = 1, .tv_nsec = 0 };
+	if (res > 1) {
+		t.tv_sec = 0;
+		t.tv_nsec = 1000000000L / res;
+	} else {
+		res = 1;
+	}
+
+	for (;;) {
+		nanosleep(&t, NULL);
+		// Reset the limit and notify all workers.
+		pthread_mutex_lock(&limit_mutex);
+		block_limit = opts.block_limit / res;
+		command_limit = opts.command_limit / res;
+		pthread_cond_broadcast(&limit_cond);
+		pthread_mutex_unlock(&limit_mutex);
+	}
+}
+
 static void usage(char *name) {
 	fprintf(stderr, "Usage: %s [options] /dev/nvme0n1 pattern [pattern options]\n", name);
 	fprintf(stderr, "\nOptions:\n");
@@ -165,6 +190,7 @@ static void usage(char *name) {
 	fprintf(stderr, "\t-j num\tSend commands in parallel on <num> threads.\n");
 	fprintf(stderr, "\t-l num\tLimit transfers to <num> blocks/s.\n");
 	fprintf(stderr, "\t-L num\tLimit transfers to <num> commands/s.\n");
+	fprintf(stderr, "\t-r num\tSet limit resolution to 1/<num> s.\n");
 	exit(1);
 }
 
@@ -177,7 +203,7 @@ int main(int argc, char **argv) {
 
 	// Options
 	int opt; // +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:l:L:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:j:l:L:r:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -195,6 +221,9 @@ int main(int argc, char **argv) {
 			break;
 		case 'L':
 			opts.command_limit = atoll(optarg);
+			break;
+		case 'r':
+			opts.limit_resolution = atol(optarg);
 			break;
 		case 'h':
 		default:
@@ -241,6 +270,8 @@ int main(int argc, char **argv) {
 		init_worker(&workers[i]);
 		pthread_create(&workers[i].thread_id, NULL, run_worker, &workers[i]);
 	}
+	pthread_t limiter_tid;
+	pthread_create(&limiter_tid, NULL, run_limiter, NULL);
 
 	struct timespec t = { .tv_sec = 1, .tv_nsec = 0 };
 	uint64_t block_count, command_count;
@@ -262,15 +293,6 @@ int main(int argc, char **argv) {
 			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
 		else
 			putchar('\n');
-
-		if (opts.block_limit > 0 || opts.command_limit > 0) {
-			// Reset the limit and notify all workers.
-			pthread_mutex_lock(&limit_mutex);
-			block_limit = opts.block_limit;
-			command_limit = opts.command_limit;
-			pthread_cond_broadcast(&limit_cond);
-			pthread_mutex_unlock(&limit_mutex);
-		}
 	}
 
 	dlclose(handle);
