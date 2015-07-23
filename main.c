@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
 	printf("Memory buffer size: %"PRIu64" blocks (%"PRIu64" MiB)\n", pattern->block_count(), (pattern->block_count() << ssd_features.lba_shift) >> 20);
 	printf("Pattern loaded: %s\n\n", pattern->desc);
 
-	buffer = malloc(pattern->block_count() << ssd_features.lba_shift);
+	buffer = aligned_alloc(64, pattern->block_count() << ssd_features.lba_shift);
 	if (buffer == NULL) {
 		perror("malloc");
 		exit(1);
