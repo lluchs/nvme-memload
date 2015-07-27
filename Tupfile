@@ -1,8 +1,12 @@
 include_rules
 
+# Necessary to make symbols appear when using dlopen().
+CFLAGS += -fpic
+
 LDFLAGS += -rdynamic
 LDFLAGS += -ldl
 LDFLAGS += -pthread
+LDFLAGS += -Wl,--unresolved-symbols=ignore-in-object-files
 
 : foreach *.c |> !cc |>
 : *.o |> !ld |> nvme-memload

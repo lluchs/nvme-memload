@@ -19,6 +19,7 @@
 #include <libgen.h>
 #include <math.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,10 @@
 #include "nvme.h"
 #include "pattern.h"
 #include "random.h"
+#include "pcm.h"
+
+#define handle_error(msg) \
+	do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 static uint8_t *buffer;
 static struct ssd_features ssd_features;
@@ -46,6 +51,7 @@ static struct {
 	long long block_limit;
 	long long command_limit;
 	long limit_resolution;
+	bool enable_pcm;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
@@ -53,6 +59,7 @@ static struct {
 	.block_limit = 0,
 	.command_limit = 0,
 	.limit_resolution = 0,
+	.enable_pcm = false,
 };
 
 struct worker_state {
@@ -63,6 +70,10 @@ struct worker_state {
 
 // Used to move values to the cache, must not be optimized out.
 uint8_t dummy_sum;
+
+static void signal_handler(int sig) {
+	exit(0);
+}
 
 static char *get_pattern_path(char *pattern) {
 	static char buffer[255];
@@ -203,7 +214,7 @@ int main(int argc, char **argv) {
 
 	// Options
 	int opt; // +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:l:L:r:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:j:l:L:r:p:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -224,6 +235,10 @@ int main(int argc, char **argv) {
 			break;
 		case 'r':
 			opts.limit_resolution = atol(optarg);
+			break;
+		case 'p':
+			pcm_parse_optarg(optarg);
+			opts.enable_pcm = true;
 			break;
 		case 'h':
 		default:
@@ -255,12 +270,22 @@ int main(int argc, char **argv) {
 	printf("Pattern loaded: %s\n\n", pattern->desc);
 
 	buffer = aligned_alloc(64, pattern->block_count() << ssd_features.lba_shift);
-	if (buffer == NULL) {
-		perror("malloc");
-		exit(1);
-	}
+	if (buffer == NULL)
+		handle_error("malloc");
+
 	if (opts.cache_once)
 		put_in_cache(0, pattern->block_count() << ssd_features.lba_shift);
+
+	if (opts.enable_pcm)
+		pcm_enable();
+
+	// Exit normally on interrupts.
+	struct sigaction sa;
+	sa.sa_handler = signal_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	if (sigaction(SIGINT, &sa, NULL) == -1)
+		handle_error("sigaction");
 
 	block_limit = opts.block_limit;
 	command_limit = opts.command_limit;
