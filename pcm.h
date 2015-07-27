@@ -16,7 +16,13 @@
 
 #pragma once
 
+#include <stdint.h>
 #include <stdlib.h>
 
 void pcm_parse_optarg(const char *optarg);
 void pcm_enable();
+
+// Returns the name of the counter passed via pcm_parse_optarg().
+const char * pcm_get_counter_name();
+// Returns the current counter value.
+uint64_t pcm_get_value();

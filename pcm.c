@@ -80,9 +80,9 @@ static void exit_handler() {
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	double diff = end_time.tv_sec - start_time.tv_sec + (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
 
-	uint64_t counter = getPCIeCounters(instance, 0);
+	uint64_t counter = pcm_get_value();
 	long double per_second = (long double)counter / diff;
-	printf("%s: %"PRIu64" over %.2fs (%.0Lf per second)\n", opcode_to_str(opcode), counter, diff, per_second);
+	printf("%s: %"PRIu64" over %.2fs (%.0Lf per second)\n", pcm_get_counter_name(), counter, diff, per_second);
 }
 
 void pcm_parse_optarg(const char *optarg) {
@@ -111,4 +111,12 @@ void pcm_enable() {
 
 	programPCIeCounters(instance, opcode, 0, 0);
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
+}
+
+const char * pcm_get_counter_name() {
+	return opcode_to_str(opcode);
+}
+
+uint64_t pcm_get_value() {
+	return getPCIeCounters(instance, 0);
 }

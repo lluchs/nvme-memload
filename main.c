@@ -306,7 +306,7 @@ int main(int argc, char **argv) {
 	pthread_create(&limiter_tid, NULL, run_limiter, NULL);
 
 	struct timespec t = { .tv_sec = 1, .tv_nsec = 0 };
-	uint64_t block_count, command_count;
+	uint64_t block_count, command_count, pcm_value = 0;
 	for (;;) {
 		nanosleep(&t, NULL);
 
@@ -322,9 +322,15 @@ int main(int argc, char **argv) {
 		// Show command number and size when it's large enough to matter.
 		uint64_t command_size = (command_count * (sizeof(struct nvme_rw_command) + sizeof(struct nvme_completion))) >> 20;
 		if (command_size)
-			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
-		else
-			putchar('\n');
+			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)", command_count, command_size);
+
+		if (opts.enable_pcm) {
+			uint64_t next = pcm_get_value();
+			printf(", %s: %"PRIu64, pcm_get_counter_name(), next - pcm_value);
+			pcm_value = next;
+		}
+
+		putchar('\n');
 
 		if (opts.time_limit && --time_limit <= 0) {
 			printf("\nTime limit reached after %ds, exiting…\n", opts.time_limit);
