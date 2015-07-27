@@ -52,6 +52,7 @@ static struct {
 	long long command_limit;
 	long limit_resolution;
 	bool enable_pcm;
+	int time_limit;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
@@ -60,6 +61,7 @@ static struct {
 	.command_limit = 0,
 	.limit_resolution = 0,
 	.enable_pcm = false,
+	.time_limit = 0,
 };
 
 struct worker_state {
@@ -202,6 +204,7 @@ static void usage(char *name) {
 	fprintf(stderr, "\t-l num\tLimit transfers to <num> blocks/s.\n");
 	fprintf(stderr, "\t-L num\tLimit transfers to <num> commands/s.\n");
 	fprintf(stderr, "\t-r num\tSet limit resolution to 1/<num> s.\n");
+	fprintf(stderr, "\t-t num\tSet execution time to <num> s.\n");
 	exit(1);
 }
 
@@ -214,7 +217,7 @@ int main(int argc, char **argv) {
 
 	// Options
 	int opt; // +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:l:L:r:p:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:j:l:L:r:t:p:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -235,6 +238,9 @@ int main(int argc, char **argv) {
 			break;
 		case 'r':
 			opts.limit_resolution = atol(optarg);
+			break;
+		case 't':
+			opts.time_limit = atoi(optarg);
 			break;
 		case 'p':
 			pcm_parse_optarg(optarg);
@@ -289,6 +295,7 @@ int main(int argc, char **argv) {
 
 	block_limit = opts.block_limit;
 	command_limit = opts.command_limit;
+	int time_limit = opts.time_limit;
 
 	struct worker_state workers[opts.parallelism];
 	for (int i = 0; i < opts.parallelism; i++) {
@@ -318,6 +325,11 @@ int main(int argc, char **argv) {
 			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)\n", command_count, command_size);
 		else
 			putchar('\n');
+
+		if (opts.time_limit && --time_limit <= 0) {
+			printf("\nTime limit reached after %ds, exiting…\n", opts.time_limit);
+			exit(0);
+		}
 	}
 
 	dlclose(handle);
