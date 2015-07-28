@@ -3,6 +3,7 @@
 CFLAGS += -std=gnu11
 CFLAGS += -O2
 CFLAGS += -Wall -Werror
+CFLAGS += -g
 
 LDFLAGS += -lm
 
