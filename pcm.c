@@ -55,6 +55,7 @@ static const char* pcm_operation_list[] = {
 static pcm_handle_t instance;
 static enum CBoxOpc opcode;
 static struct timespec start_time;
+static uint32_t tid;
 static enum tracking_mode {
 	hits = 0,
 	misses = 1,
@@ -85,6 +86,12 @@ static enum tracking_mode str_to_tracking_mode(const char *str) {
 	return -1;
 }
 
+static uint32_t str_to_tid(const char *str) {
+	if (str == NULL) return 0;
+	if (strcmp(str, "filtered") == 0) return 0x3E;
+	return -1;
+}
+
 static void exit_handler() {
 	printf("\n\n");
 
@@ -100,16 +107,18 @@ static void exit_handler() {
 void pcm_parse_optarg(const char *_optarg) {
 	char * optarg = strdup(_optarg);
 	char * opcode_str = strtok(optarg, "-");
-	char * tracking_mode_str = strtok(NULL, "");
+	char * tracking_mode_str = strtok(NULL, "-");
+	char * filtered_str = strtok(NULL, "");
 	opcode = str_to_opcode(opcode_str);
 	tracking_mode = str_to_tracking_mode(tracking_mode_str);
-	if (opcode == -1 || tracking_mode == -1) {
+	tid = str_to_tid(filtered_str);
+	if (opcode == -1 || tracking_mode == -1 || tid == -1) {
 		fprintf(stderr, "Error: Invalid option -p %s\n", _optarg);
 		fprintf(stderr, "Valid opcodes are: ");
 		for (const char **p = pcm_operation_list; *p; p++)
 			fprintf(stderr, "%s ", *p);
 		fprintf(stderr, "\n");
-		fprintf(stderr, "Valid suffixes are -hits or -misses.\n");
+		fprintf(stderr, "Valid suffixes are -hits or -misses, then -filtered (optional).\n");
 		exit(1);
 	}
 
@@ -128,7 +137,7 @@ void pcm_enable() {
 	// Print statistics on exit.
 	atexit(exit_handler);
 
-	programPCIeCounters(instance, opcode, 0, tracking_mode);
+	programPCIeCounters(instance, opcode, tid, tracking_mode);
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 }
 
