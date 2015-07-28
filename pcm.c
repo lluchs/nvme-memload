@@ -55,6 +55,10 @@ static const char* pcm_operation_list[] = {
 static pcm_handle_t instance;
 static enum CBoxOpc opcode;
 static struct timespec start_time;
+static enum tracking_mode {
+	hits = 0,
+	misses = 1,
+} tracking_mode;
 
 static enum CBoxOpc str_to_opcode(const char *str) {
 #define OP(op) if (!strncmp(str, #op, sizeof(#op))) return op;
@@ -73,6 +77,14 @@ static const char * opcode_to_str(enum CBoxOpc opcode) {
 	}
 }
 
+static enum tracking_mode str_to_tracking_mode(const char *str) {
+	if (str != NULL) {
+		if (strcmp(str, "hits") == 0) return hits;
+		if (strcmp(str, "misses") == 0) return misses;
+	}
+	return -1;
+}
+
 static void exit_handler() {
 	printf("\n\n");
 
@@ -85,14 +97,19 @@ static void exit_handler() {
 	printf("%s: %"PRIu64" over %.2fs (%.0Lf per second)\n", pcm_get_counter_name(), counter, diff, per_second);
 }
 
-void pcm_parse_optarg(const char *optarg) {
-	opcode = str_to_opcode(optarg);
-	if (opcode == -1) {
-		fprintf(stderr, "Error: Invalid option -p %s\n", optarg);
+void pcm_parse_optarg(const char *_optarg) {
+	char * optarg = strdup(_optarg);
+	char * opcode_str = strtok(optarg, "-");
+	char * tracking_mode_str = strtok(NULL, "");
+	opcode = str_to_opcode(opcode_str);
+	tracking_mode = str_to_tracking_mode(tracking_mode_str);
+	if (opcode == -1 || tracking_mode == -1) {
+		fprintf(stderr, "Error: Invalid option -p %s\n", _optarg);
 		fprintf(stderr, "Valid opcodes are: ");
 		for (const char **p = pcm_operation_list; *p; p++)
 			fprintf(stderr, "%s ", *p);
 		fprintf(stderr, "\n");
+		fprintf(stderr, "Valid suffixes are -hits or -misses.\n");
 		exit(1);
 	}
 
@@ -103,13 +120,15 @@ void pcm_parse_optarg(const char *optarg) {
 		fprintf(stderr, "Error: Intel PCM not available. %s\n", dlerror());
 		exit(1);
 	}
+
+	free(optarg);
 }
 
 void pcm_enable() {
 	// Print statistics on exit.
 	atexit(exit_handler);
 
-	programPCIeCounters(instance, opcode, 0, 0);
+	programPCIeCounters(instance, opcode, 0, tracking_mode);
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 }
 
