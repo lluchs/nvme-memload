@@ -41,6 +41,7 @@ static struct ssd_features ssd_features;
 static pthread_mutex_t pattern_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct pattern *pattern;
 static long long block_limit, command_limit;
+static long long global_block_limit, global_command_limit;
 static pthread_mutex_t limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t limit_cond = PTHREAD_COND_INITIALIZER;
 
@@ -53,6 +54,8 @@ static struct {
 	long limit_resolution;
 	bool enable_pcm;
 	int time_limit;
+	long long global_block_limit;
+	long long global_command_limit;
 } opts = {
 	.cache_once = false,
 	.cache_always = false,
@@ -62,6 +65,8 @@ static struct {
 	.limit_resolution = 0,
 	.enable_pcm = false,
 	.time_limit = 0,
+	.global_block_limit = 0,
+	.global_command_limit = 0,
 };
 
 struct worker_state {
@@ -136,6 +141,12 @@ static void put_in_cache(size_t start, size_t count) {
 	}
 }
 
+static inline bool limit_enabled() {
+	return opts.block_limit > 0 || opts.command_limit > 0 || opts.global_block_limit > 0 || opts.global_command_limit > 0;
+}
+
+#define LIMIT_REACHED(limit) (opts.limit > 0 && limit <= 0)
+
 static void init_worker(struct worker_state *state) {
 	state->block_count = 0;
 	state->command_count = 0;
@@ -150,16 +161,20 @@ static void *run_worker(void *arg) {
 		cmd = pattern->next_cmd(&ssd_features);
 		pthread_mutex_unlock(&pattern_mutex);
 
-		if (opts.block_limit > 0 || opts.command_limit > 0) {
+		if (limit_enabled()) {
 			// The limit is shared by all workers and periodically reset by the main thread.
 			pthread_mutex_lock(&limit_mutex);
-			while ((opts.block_limit   > 0 && block_limit   <= 0)
-			    || (opts.command_limit > 0 && command_limit <= 0))
+			while (LIMIT_REACHED(block_limit) || LIMIT_REACHED(command_limit))
 				pthread_cond_wait(&limit_cond, &limit_mutex);
 			// Allow a single operation to go over the limit.
 			block_limit -= cmd.block_count;
 			command_limit -= 1;
+			global_block_limit -= cmd.block_count;
+			global_command_limit -= 1;
 			pthread_mutex_unlock(&limit_mutex);
+
+			if (LIMIT_REACHED(global_block_limit) || LIMIT_REACHED(global_command_limit))
+				return NULL;
 		}
 
 		if (opts.cache_always)
@@ -174,7 +189,7 @@ static void *run_worker(void *arg) {
 }
 
 static void *run_limiter(void *arg) {
-	if (!(opts.block_limit > 0 || opts.command_limit > 0)) return NULL;
+	if (!limit_enabled()) return NULL;
 
 	long res = opts.limit_resolution;
 	struct timespec t = { .tv_sec = 1, .tv_nsec = 0 };
@@ -187,6 +202,7 @@ static void *run_limiter(void *arg) {
 
 	for (;;) {
 		nanosleep(&t, NULL);
+
 		// Reset the limit and notify all workers.
 		pthread_mutex_lock(&limit_mutex);
 		block_limit = opts.block_limit / res;
@@ -205,6 +221,8 @@ static void usage(char *name) {
 	fprintf(stderr, "\t-L num\tLimit transfers to <num> commands/s.\n");
 	fprintf(stderr, "\t-r num\tSet limit resolution to 1/<num> s.\n");
 	fprintf(stderr, "\t-t num\tSet execution time to <num> s.\n");
+	fprintf(stderr, "\t-g num\tStop after <num> blocks.\n");
+	fprintf(stderr, "\t-G num\tStop after <num> commands.\n");
 	exit(1);
 }
 
@@ -217,7 +235,7 @@ int main(int argc, char **argv) {
 
 	// Options
 	int opt; // +: Stop parsing arguments when the first non-option is encountered.
-	while ((opt = getopt(argc, argv, "+c:j:l:L:r:t:p:h")) != -1) {
+	while ((opt = getopt(argc, argv, "+c:g:G:j:l:L:r:t:p:h")) != -1) {
 		switch (opt) {
 		case 'c':
 			if (!strcmp(optarg, "once"))
@@ -226,6 +244,12 @@ int main(int argc, char **argv) {
 				opts.cache_always = true;
 			else
 				usage(argv[0]);
+			break;
+		case 'g':
+			opts.global_block_limit = atoll(optarg);
+			break;
+		case 'G':
+			opts.global_command_limit = atoll(optarg);
 			break;
 		case 'j':
 			opts.parallelism = atoi(optarg);
@@ -295,6 +319,8 @@ int main(int argc, char **argv) {
 
 	block_limit = opts.block_limit;
 	command_limit = opts.command_limit;
+	global_block_limit = opts.global_block_limit;
+	global_command_limit = opts.global_command_limit;
 	int time_limit = opts.time_limit;
 
 	struct worker_state workers[opts.parallelism];
@@ -336,6 +362,15 @@ int main(int argc, char **argv) {
 			printf("\nTime limit reached after %ds, exiting…\n", opts.time_limit);
 			exit(0);
 		}
+		if (LIMIT_REACHED(global_block_limit)) {
+			printf("\nBlock limit of %lld reached, exiting…\n", opts.global_block_limit);
+			exit(0);
+		}
+		if (LIMIT_REACHED(global_command_limit)) {
+			printf("\nCommand limit of %lld reached, exiting…\n", opts.global_command_limit);
+			exit(0);
+		}
+
 	}
 
 	dlclose(handle);
