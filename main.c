@@ -345,10 +345,9 @@ int main(int argc, char **argv) {
 			workers[i].command_count = 0;
 		}
 		printf("%"PRIu64" blocks/s (%"PRIu64" MiB/s)", block_count, (block_count << ssd_features.lba_shift) >> 20);
-		// Show command number and size when it's large enough to matter.
+		// Show command number and estimated size.
 		uint64_t command_size = (command_count * (sizeof(struct nvme_rw_command) + sizeof(struct nvme_completion))) >> 20;
-		if (command_size || opts.enable_pcm)
-			printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)", command_count, command_size);
+		printf(" via %"PRIu64" commands (%"PRIu64" MiB/s)", command_count, command_size);
 
 		if (opts.enable_pcm) {
 			uint64_t next = pcm_get_value();
