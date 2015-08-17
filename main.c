@@ -145,7 +145,7 @@ static inline bool limit_enabled() {
 	return opts.block_limit > 0 || opts.command_limit > 0 || opts.global_block_limit > 0 || opts.global_command_limit > 0;
 }
 
-#define LIMIT_REACHED(limit) (opts.limit > 0 && limit <= 0)
+#define LIMIT_REACHED(limit) (opts.limit > 0 && limit < 0)
 
 static void init_worker(struct worker_state *state) {
 	state->block_count = 0;
