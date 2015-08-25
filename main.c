@@ -285,6 +285,22 @@ int main(int argc, char **argv) {
 	printf("Block size: %i B\n", 1 << ssd_features.lba_shift);
 	printf("Max block count: %i blocks per command\n", ssd_features.max_block_count);
 
+	// Print info about options (useful for analyzing logs).
+	if (opts.cache_once || opts.cache_always)
+		printf("Caching mode: %s\n", opts.cache_once ? "once" : "always");
+	if (opts.global_block_limit)
+		printf("Global block limit: %lld blocks\n", opts.global_block_limit);
+	if (opts.global_command_limit)
+		printf("Global command limit: %lld commands\n", opts.global_command_limit);
+	if (opts.time_limit)
+		printf("Time limit: %d s\n", opts.time_limit);
+	if (opts.block_limit)
+		printf("Block limit: %lld blocks/s\n", opts.block_limit);
+	if (opts.command_limit)
+		printf("Command limit: %lld commands/s\n", opts.command_limit);
+	if (opts.limit_resolution)
+		printf("Limit resolution: 1/%ld s\n", opts.limit_resolution);
+
 	// Get pattern to execute from the dynamic linker.
 	char *pattern_path = get_pattern_path(argv[optind + 1]);
 	printf("Loading pattern %s\n", pattern_path);
